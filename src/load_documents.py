@@ -173,3 +173,16 @@ if __name__ == "__main__":
 
     print("\n\n=== Sample of cleaned Star Health text (first 500 chars) ===")
     print(clean_texts["star_health"][:500])
+
+    # DEBUG: find where "Section 1" and "Section 2" actually appear in the
+    # cleaned text, so we can see the exact format to split on
+    print("\n\n=== Locating 'Section 1' and 'Section 2' headers ===")
+    text = clean_texts["star_health"]
+    idx1 = text.find("Section 1 ")
+    idx2 = text.find("Section 2 ")
+    if idx1 != -1:
+        print(f"Found 'Section 1' at position {idx1}:")
+        print(repr(text[idx1:idx1 + 60]))
+    if idx2 != -1:
+        print(f"Found 'Section 2' at position {idx2}:")
+        print(repr(text[idx2:idx2 + 60]))
