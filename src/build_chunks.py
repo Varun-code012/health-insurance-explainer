@@ -69,8 +69,62 @@ def chunk_star_health():
     ]
 
     # Pass 2: Exclusions (Excl 01 - Excl 38, various formats)
-    exclusion_pattern = r"^\d{1,2}\.\s[A-Z0-9][^\n]*Code\s*-?\s*Excl\s*\d{2}"
+    # Use a looser pattern: any numbered line that mentions "Excl" anywhere
+    # in the same line (not just right after "Code"), since formats vary
+    # too much to pin down exactly (with/without dash, with/without space,
+    # title starting with digit or letter).
+    exclusion_pattern = r"^\d{1,2}\.\s[^\n]*Excl[^\n]*"
     roman_chunks = split_by_pattern(roman_zone_text, exclusion_pattern)
+
+    # Safety net: if any chunk is still oversized (meaning several
+    # exclusions got merged together because the regex still missed some),
+    # split that specific chunk further on any remaining numbered sub-lines
+    # like "12.", "13." etc. so no single chunk dominates retrieval.
+    MAX_CHUNK_SIZE = 3000
+    final_roman_chunks = []
+    for label, text in roman_chunks:
+        if len(text) <= MAX_CHUNK_SIZE:
+            final_roman_chunks.append((label, text))
+        else:
+            # Split oversized chunk further on any line starting with a
+            # number and a period (covers exclusions we couldn't match
+            # precisely, like "12. Treatment for Alcoholism...")
+            sub_pattern = r"^\d{1,2}\.\s[A-Za-z][^\n]*"
+            sub_chunks = split_by_pattern(text, sub_pattern)
+            if sub_chunks and len(sub_chunks) > 1:
+                final_roman_chunks.extend(sub_chunks)
+            else:
+                final_roman_chunks.append((label, text))  # couldn't split further, keep as-is
+
+    roman_chunks = final_roman_chunks
+
+    # Safety net for the Section 1-13 chunks too: Section 1 (Hospitalization)
+    # has lettered sub-points (A. Room, B. Surgeon fees, C. Anesthesia,
+    # D. Road ambulance, E. Air ambulance, F. Pre-hospitalization,
+    # G. Post-hospitalization, H. Consultations, I. Domiciliary) that were
+    # never split out - meaning specific questions about ambulance limits
+    # or post-hospitalization days couldn't surface precisely. Split any
+    # oversized section chunk on these lettered sub-points.
+    final_section_chunks = []
+    for label, text in section_chunks:
+        if len(text) <= MAX_CHUNK_SIZE:
+            final_section_chunks.append((label, text))
+        else:
+            # Lettered sub-points appear as "A. Room...", "D. Road ambulance..."
+            # at the start of a line within the section body.
+            sub_pattern = r"^[A-Z]\.\s[A-Za-z][^\n]+"
+            sub_chunks = split_by_pattern(text, sub_pattern)
+            if sub_chunks and len(sub_chunks) > 1:
+                # Keep the section label as a prefix so we don't lose
+                # context about which Section this sub-point belongs to
+                final_section_chunks.extend([
+                    (f"{label} - {sub_label}", sub_text)
+                    for sub_label, sub_text in sub_chunks
+                ])
+            else:
+                final_section_chunks.append((label, text))
+
+    section_chunks = final_section_chunks
 
     tagged_chunks = []
     for label, text in section_chunks:
@@ -120,6 +174,24 @@ def chunk_hdfc_ergo():
                     })
                 continue  # don't also add the giant parent chunk
 
+        # For any other oversized section (e.g. SECTION E, F which contain
+        # numbered sub-items like "1. Disclosure of Information"), split
+        # further so retrieval can target a specific clause, not the
+        # whole multi-thousand-character section.
+        MAX_CHUNK_SIZE = 3000
+        if len(text) > MAX_CHUNK_SIZE:
+            sub_pattern = r"^\d{1,2}\.\s[A-Za-z][^\n]+"
+            sub_chunks = split_by_pattern(text, sub_pattern)
+            if sub_chunks and len(sub_chunks) > 1:
+                for sub_label, sub_text in sub_chunks:
+                    tagged_chunks.append({
+                        "text": sub_text,
+                        "insurer": "hdfc_ergo",
+                        "section_type": section_type,
+                        "source_section": f"{label} - {sub_label}",
+                    })
+                continue
+
         tagged_chunks.append({
             "text": text,
             "insurer": "hdfc_ergo",
@@ -154,16 +226,22 @@ def chunk_niva_bupa():
     for label, text in top_chunks:
         section_type = classify_section_type(label)
 
-        # Drill into Exclusions (section 5) for sub-section chunks
-        if section_type == "exclusions":
-            sub_pattern = r"^5\.\d+(\.\d+)?\s[A-Za-z][^\n]+"
+        # Extract the top-level section number from the label (e.g. "5"
+        # from "5. Exclusions", "6" from "6. General Terms and Clauses")
+        # so we can build a matching dotted sub-pattern for THIS section.
+        section_num_match = re.match(r"^(\d{1,2})\.", label)
+        section_num = section_num_match.group(1) if section_num_match else None
+
+        MAX_CHUNK_SIZE = 3000
+        if section_num and len(text) > MAX_CHUNK_SIZE:
+            sub_pattern = rf"^{section_num}\.\d+(\.\d+)?\s[A-Za-z][^\n]+"
             sub_chunks = split_by_pattern(text, sub_pattern)
-            if sub_chunks:
+            if sub_chunks and len(sub_chunks) > 1:
                 for sub_label, sub_text in sub_chunks:
                     tagged_chunks.append({
                         "text": sub_text,
                         "insurer": "niva_bupa",
-                        "section_type": "exclusions",
+                        "section_type": section_type,
                         "source_section": sub_label,
                     })
                 continue
@@ -212,3 +290,9 @@ if __name__ == "__main__":
         print(f"source_section: {chunk['source_section']}")
         print(f"text preview: {chunk['text'][:100]}...")
         print()
+
+    # Check the largest chunks remaining, to confirm no mega-chunks survived
+    print("\n=== Top 5 largest chunks (sanity check) ===\n")
+    sorted_chunks = sorted(all_chunks, key=lambda c: len(c["text"]), reverse=True)
+    for chunk in sorted_chunks[:5]:
+        print(f"{chunk['insurer']} | {chunk['section_type']} | {chunk['source_section'][:60]} | Length: {len(chunk['text'])}")
