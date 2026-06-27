@@ -60,6 +60,41 @@ def retrieve_chunks(question, embedding_model, collection, top_k=3):
     return chunks
 
 
+def format_citations(chunks):
+    """
+    Build a clean, structured citation block from the chunks that were
+    actually retrieved - independent of whether the LLM's prose mentions
+    them. This guarantees every answer has consistent, reliable source
+    attribution, rather than relying on the LLM to remember to cite.
+    """
+    if not chunks:
+        return ""
+
+    insurer_display_names = {
+        "star_health": "Star Health",
+        "hdfc_ergo": "HDFC Ergo",
+        "niva_bupa": "Niva Bupa",
+    }
+
+    lines = ["\n\n---\n**Sources:**"]
+    seen = set()  # avoid listing the exact same source twice
+    for chunk in chunks:
+        insurer_name = insurer_display_names.get(chunk["insurer"], chunk["insurer"])
+        source_key = (insurer_name, chunk["source_section"])
+        if source_key in seen:
+            continue
+        seen.add(source_key)
+
+        # Trim long source_section labels for readability in the citation
+        section_label = chunk["source_section"]
+        if len(section_label) > 70:
+            section_label = section_label[:70] + "..."
+
+        lines.append(f"- {insurer_name}: {section_label}")
+
+    return "\n".join(lines)
+
+
 def build_prompt(question, chunks):
     """Build the prompt sent to the LLM: instructions + retrieved context
     + the user's question."""
@@ -76,8 +111,8 @@ using ONLY the information in the context below. Do not use any outside knowledg
 If the context does not contain enough information to answer the question,
 say so clearly instead of guessing.
 
-When you answer, mention which insurer and source section the information
-came from (e.g. "According to Star Health's Section 1.G...").
+Write a clear, direct answer. Do not include a sources or citations list in
+your answer text - that will be added separately and automatically.
 
 Context:
 {context_text}
@@ -90,7 +125,8 @@ Answer:"""
 
 
 def answer_question(question, embedding_model, collection, llm, top_k=3):
-    """The full RAG pipeline: retrieve -> build prompt -> generate answer."""
+    """The full RAG pipeline: retrieve -> build prompt -> generate answer
+    -> append structured citations."""
     chunks = retrieve_chunks(question, embedding_model, collection, top_k=top_k)
 
     if not chunks:
@@ -99,7 +135,9 @@ def answer_question(question, embedding_model, collection, llm, top_k=3):
     prompt = build_prompt(question, chunks)
     response = llm.invoke(prompt)
 
-    return response.content, chunks
+    full_answer = response.content + format_citations(chunks)
+
+    return full_answer, chunks
 
 
 if __name__ == "__main__":
