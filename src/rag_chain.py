@@ -154,23 +154,27 @@ if __name__ == "__main__":
         groq_api_key=os.getenv("GROQ_API_KEY"),
     )
 
-    # Day 2 — Edge case testing. These are deliberately tricky:
-    # off-topic, info genuinely not in the docs, ambiguous, and a
-    # trick question with a false premise.
-    edge_case_questions = [
-        "What's the best pizza topping?",  # totally off-topic
-        "Does HDFC Ergo cover treatment on the moon?",  # absurd, not in docs
-        "What is the exact claim settlement amount I will receive for a knee surgery?",  # not answerable - depends on specifics not in policy text
-        "Does Star Health's policy have a 100% no-questions-asked refund anytime?",  # false premise - tests if it corrects misinformation or just agrees
-        "Tell me about dental coverage",  # ambiguous - which insurer?
+    # Day 4 — Run the original 10 Week 1 test questions through the full
+    # RAG chain (retrieval + generation + citations) to confirm accuracy
+    # holds up after the Day 3 prompt changes.
+    test_questions = [
+        #"What is the waiting period for pre-existing diseases under HDFC Ergo's my:health Medisure policy?",
+        #"Does Star Health's Comprehensive policy cover AYUSH treatments like Ayurveda or Homeopathy?",
+        #"What is excluded under cosmetic or plastic surgery in the HDFC Ergo policy?",
+        #"How many days after discharge can I claim post-hospitalization expenses under Star Health?",
+        #"Is maternity covered under Niva Bupa's Health Premia policy, and if so, what are the conditions?",
+        "What is the co-payment percentage for senior citizens above 60-61 years under Star Health's policy?",
+        "Compare the pre-existing disease waiting period across all three insurers - which one has the shortest?",
+        "What documents do I need to submit for a reimbursement claim under HDFC Ergo?",
+        "Does the Star Health policy cover air ambulance charges, and what is the maximum limit?",
+        "What is the free look period for a new individual health policy, and what happens if I cancel during it?",
     ]
 
-    for question in edge_case_questions:
+    for i, question in enumerate(test_questions, 1):
         print(f"\n{'=' * 80}")
-        print(f"EDGE CASE: {question}")
+        print(f"Q{i}: {question}")
         print("-" * 80)
 
         answer, sources_used = answer_question(question, embedding_model, collection, llm)
 
-        print(f"\nAnswer:\n{answer}")
-        print(f"\nSources used: {[(s['insurer'], s['source_section']) for s in sources_used]}")
+        print(f"\n{answer}")
