@@ -32,10 +32,14 @@ def detect_insurer_filter(question):
     return None
 
 
-def retrieve_chunks(question, embedding_model, collection, top_k=3):
+def retrieve_chunks(question, embedding_model, collection, top_k=3, insurer_override=None):
     """Embed the question, query ChromaDB, return the top matching chunks
-    along with their metadata (insurer, section_type, source_section)."""
-    insurer_filter = detect_insurer_filter(question)
+    along with their metadata (insurer, section_type, source_section).
+
+    insurer_override: if provided (e.g. from a UI dropdown), this takes
+    priority over keyword-based detection from the question text.
+    """
+    insurer_filter = insurer_override if insurer_override else detect_insurer_filter(question)
 
     query_embedding = embedding_model.encode([question])[0].tolist()
 
@@ -105,6 +109,21 @@ def build_prompt(question, chunks):
         )
     context_text = "\n\n".join(context_blocks)
 
+    # Detect if the retrieved context spans more than one insurer - this
+    # happens when the question didn't name a specific insurer. In that
+    # case, the answer needs explicit structure or it tends to blend facts
+    # from different policies into one confusing paragraph.
+    insurers_in_context = set(chunk["insurer"] for chunk in chunks)
+    multi_insurer_instruction = ""
+    if len(insurers_in_context) > 1:
+        multi_insurer_instruction = """
+The context below comes from MORE THAN ONE insurer. Since the question
+didn't specify which policy, organize your answer clearly by insurer
+(e.g. a short heading or sentence per insurer) rather than blending facts
+from different policies into one paragraph. If the policies agree, you can
+say so briefly instead of repeating the same point three times.
+"""
+
     prompt = f"""You are a health insurance policy assistant. Answer the user's question
 using ONLY the information in the context below. Do not use any outside knowledge.
 
@@ -113,7 +132,7 @@ say so clearly instead of guessing.
 
 Write a clear, direct answer. Do not include a sources or citations list in
 your answer text - that will be added separately and automatically.
-
+{multi_insurer_instruction}
 Context:
 {context_text}
 
@@ -124,10 +143,10 @@ Answer:"""
     return prompt
 
 
-def answer_question(question, embedding_model, collection, llm, top_k=3):
+def answer_question(question, embedding_model, collection, llm, top_k=3, insurer_override=None):
     """The full RAG pipeline: retrieve -> build prompt -> generate answer
     -> append structured citations."""
-    chunks = retrieve_chunks(question, embedding_model, collection, top_k=top_k)
+    chunks = retrieve_chunks(question, embedding_model, collection, top_k=top_k, insurer_override=insurer_override)
 
     if not chunks:
         return "I couldn't find any relevant information to answer that question.", []
@@ -158,11 +177,11 @@ if __name__ == "__main__":
     # RAG chain (retrieval + generation + citations) to confirm accuracy
     # holds up after the Day 3 prompt changes.
     test_questions = [
-        #"What is the waiting period for pre-existing diseases under HDFC Ergo's my:health Medisure policy?",
-        #"Does Star Health's Comprehensive policy cover AYUSH treatments like Ayurveda or Homeopathy?",
-        #"What is excluded under cosmetic or plastic surgery in the HDFC Ergo policy?",
-        #"How many days after discharge can I claim post-hospitalization expenses under Star Health?",
-        #"Is maternity covered under Niva Bupa's Health Premia policy, and if so, what are the conditions?",
+        "What is the waiting period for pre-existing diseases under HDFC Ergo's my:health Medisure policy?",
+        "Does Star Health's Comprehensive policy cover AYUSH treatments like Ayurveda or Homeopathy?",
+        "What is excluded under cosmetic or plastic surgery in the HDFC Ergo policy?",
+        "How many days after discharge can I claim post-hospitalization expenses under Star Health?",
+        "Is maternity covered under Niva Bupa's Health Premia policy, and if so, what are the conditions?",
         "What is the co-payment percentage for senior citizens above 60-61 years under Star Health's policy?",
         "Compare the pre-existing disease waiting period across all three insurers - which one has the shortest?",
         "What documents do I need to submit for a reimbursement claim under HDFC Ergo?",

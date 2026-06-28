@@ -30,7 +30,43 @@ def load_resources():
     return embedding_model, collection, llm
 
 
-st.title("Health Insurance Policy Explainer")
+st.set_page_config(page_title="Health Insurance Policy Explainer", page_icon="🏥")
+
+# --- Sidebar: app context + insurer selector ---
+with st.sidebar:
+    st.header("About this assistant")
+    st.markdown(
+        "This assistant answers questions about three health insurance "
+        "policies using RAG (Retrieval-Augmented Generation):\n\n"
+        "- **Star Health** Comprehensive Insurance Policy\n"
+        "- **HDFC Ergo** my:health Medisure Super Top Up\n"
+        "- **Niva Bupa** Health Premia\n\n"
+        "All answers are grounded in the actual policy documents, with "
+        "sources cited below each response."
+    )
+
+    st.divider()
+
+    st.subheader("Focus on one insurer (optional)")
+    insurer_choice = st.radio(
+        "If you select one, your question will only be answered using that insurer's policy.",
+        options=["Auto-detect", "Star Health", "HDFC Ergo", "Niva Bupa"],
+        index=0,
+    )
+
+    insurer_map = {
+        "Star Health": "star_health",
+        "HDFC Ergo": "hdfc_ergo",
+        "Niva Bupa": "niva_bupa",
+    }
+    insurer_override = insurer_map.get(insurer_choice)  # None if "Auto-detect"
+
+    st.divider()
+    if st.button("Clear conversation"):
+        st.session_state.messages = []
+        st.rerun()
+
+st.title("🏥 Health Insurance Policy Explainer")
 st.caption("Ask questions about Star Health, HDFC Ergo, or Niva Bupa health insurance policies.")
 
 embedding_model, collection, llm = load_resources()
@@ -57,8 +93,14 @@ if user_question:
 
     # Generate and show the assistant's answer
     with st.chat_message("assistant"):
+        if insurer_override:
+            st.caption(f"🔒 Searching only within: **{insurer_choice}**")
+
         with st.spinner("Thinking..."):
-            answer, sources = answer_question(user_question, embedding_model, collection, llm)
+            answer, sources = answer_question(
+                user_question, embedding_model, collection, llm,
+                insurer_override=insurer_override,
+            )
         st.markdown(answer)
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
