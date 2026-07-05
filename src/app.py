@@ -5,6 +5,7 @@ text input, conversation history, and the model's grounded answers.
 """
 
 import os
+import sys
 import streamlit as st
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -14,6 +15,17 @@ from langchain_groq import ChatGroq
 from rag_chain import answer_question
 
 load_dotenv()
+
+# Auto-build ChromaDB on first launch (e.g. on Streamlit Cloud where
+# chroma_db/ doesn't exist in the repo). This runs once, takes a few
+# minutes, and is skipped on all subsequent runs.
+if not os.path.exists("./chroma_db"):
+    with st.spinner("Setting up the database for the first time... this takes a few minutes."):
+        src_path = os.path.join(os.path.dirname(__file__), ".")
+        if src_path not in sys.path:
+            sys.path.insert(0, src_path)
+        from store_chunks import main as build_db
+        build_db()
 
 
 # Cache the heavy resources (embedding model, ChromaDB connection, LLM)
