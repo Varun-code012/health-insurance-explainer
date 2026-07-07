@@ -35,10 +35,13 @@ def load_resources():
     embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     client = chromadb.PersistentClient(path="./chroma_db")
     collection = client.get_collection(name="health_insurance_policies")
+    
+    groq_api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+    
     llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
-        groq_api_key=os.getenv("GROQ_API_KEY"),
-    )
+    model="llama-3.3-70b-versatile",
+    groq_api_key=groq_api_key,
+)
     return embedding_model, collection, llm
 
 
