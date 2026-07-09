@@ -1,5 +1,7 @@
 # 🏥 Health Insurance Policy Explainer
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit-red)](health-insurance-explainer-qbfbgv9aafdw6t8yhfd7ef.streamlit.app)
+
 A RAG (Retrieval-Augmented Generation) chatbot that answers plain-language questions about health insurance policies — with exact source citations from the actual policy documents.
 
 Built across three real Indian health insurance policies:
